@@ -1,0 +1,178 @@
+name: 'Terraform Deploy'
+
+# =============================================================================
+# REUSABLE WORKFLOW - Called by terraform.yml
+# =============================================================================
+# DRY: One workflow definition, used for both staging and production
+# =============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment (staging or production)'
+        required: true
+        type: string
+      action:
+        description: 'Terraform action (apply or destroy)'
+        required: false
+        type: string
+        default: 'apply'
+    secrets:
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+      GITOPS_SSH_PRIVATE_KEY:
+        required: true
+      AKS_ADMIN_GROUP_ID:
+        required: true
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+env:
+  TF_VERSION: '1.7.0'
+  ARM_USE_OIDC: true
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  terraform:
+    name: 'Terraform ${{ inputs.environment }}'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    defaults:
+      run:
+        working-directory: ./${{ inputs.environment }}
+
+    steps:
+      # =======================================================================
+      # Setup
+      # =======================================================================
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup SSH Key for FluxCD
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GITOPS_SSH_PRIVATE_KEY }}" > ~/.ssh/mercury-gitops-v2
+          chmod 600 ~/.ssh/mercury-gitops-v2
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          cat > ~/.ssh/config << EOF
+          Host github.com
+            IdentityFile ~/.ssh/mercury-gitops-v2
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Clone GitOps Repository
+        run: |
+          cd ${{ github.workspace }}
+          git clone git@github.com:Tim275/mercury-gitops-v2.git
+
+      # =======================================================================
+      # Security Scanning (Enterprise Best Practice)
+      # =======================================================================
+      - name: Run TFSec Security Scan
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: ./${{ inputs.environment }}
+          soft_fail: true  # Don't block on first run, review findings
+
+      - name: Run Checkov Security Scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: ./${{ inputs.environment }}
+          framework: terraform
+          soft_fail: true  # Review findings before enforcing
+          output_format: cli
+
+      # =======================================================================
+      # Terraform Operations
+      # =======================================================================
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        continue-on-error: false  # FAIL on format issues (enforced!)
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan \
+            -var="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            -var="aks_admin_group_id=${{ secrets.AKS_ADMIN_GROUP_ID }}" \
+            -var="gitops_repo_local_path=${{ github.workspace }}/mercury-gitops-v2"
+
+      # =======================================================================
+      # Apply (only for apply action)
+      # =======================================================================
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan
+
+      # =======================================================================
+      # Destroy (with safety confirmation)
+      # =======================================================================
+      - name: Terraform Plan Destroy
+        if: inputs.action == 'destroy'
+        run: |
+          echo "⚠️  DESTROYING ${{ inputs.environment }} INFRASTRUCTURE"
+          echo "This action is IRREVERSIBLE!"
+          terraform plan -destroy -no-color -out=tfplan-destroy \
+            -var="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            -var="aks_admin_group_id=${{ secrets.AKS_ADMIN_GROUP_ID }}" \
+            -var="gitops_repo_local_path=${{ github.workspace }}/mercury-gitops-v2"
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        run: terraform apply -auto-approve tfplan-destroy
+
+      # =======================================================================
+      # GitOps Push (only for apply action)
+      # =======================================================================
+      - name: Push GitOps Changes
+        if: inputs.action == 'apply'
+        run: |
+          cd ${{ github.workspace }}/mercury-gitops-v2
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update ${{ inputs.environment }} manifests [skip ci]"
+            git push
+          fi
+
+      # =======================================================================
+      # Post-Apply Validation
+      # =======================================================================
+      - name: Validate Deployment
+        if: inputs.action == 'apply' && success()
+        run: |
+          echo "✅ Terraform apply completed for ${{ inputs.environment }}"
+          echo "📦 GitOps changes pushed to mercury-gitops-v2"
+          echo "⏳ FluxCD will sync within 60 seconds"

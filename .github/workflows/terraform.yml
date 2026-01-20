@@ -1,0 +1,195 @@
+name: 'Terraform'
+
+# =============================================================================
+# ENTERPRISE BRANCH STRATEGY
+# =============================================================================
+# - staging branch  → Deploys to STAGING environment
+# - main branch     → Deploys to PRODUCTION environment
+# - PR staging→main → Shows production plan (review before merge)
+# =============================================================================
+
+on:
+  push:
+    branches:
+      - staging
+      - main
+    paths:
+      - 'staging/**'
+      - 'production/**'
+      - 'modules/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'staging/**'
+      - 'production/**'
+      - 'modules/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      action:
+        description: 'Terraform Action'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+# =============================================================================
+# Prevent concurrent runs on same environment
+# =============================================================================
+concurrency:
+  group: terraform-${{ github.event.inputs.environment || (github.ref == 'refs/heads/staging' && 'staging') || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  # =============================================================================
+  # STAGING DEPLOYMENT
+  # Triggered by: push to 'staging' branch OR manual workflow_dispatch
+  # =============================================================================
+  staging:
+    name: 'Deploy Staging'
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/staging')
+    uses: ./.github/workflows/terraform-deploy.yml
+    with:
+      environment: staging
+      action: ${{ github.event.inputs.action || 'apply' }}
+    secrets:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      GITOPS_SSH_PRIVATE_KEY: ${{ secrets.GITOPS_SSH_PRIVATE_KEY }}
+      AKS_ADMIN_GROUP_ID: ${{ secrets.AKS_ADMIN_GROUP_ID }}
+
+  # =============================================================================
+  # PRODUCTION DEPLOYMENT
+  # Triggered by: push to 'main' branch OR manual workflow_dispatch
+  # =============================================================================
+  production:
+    name: 'Deploy Production'
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    uses: ./.github/workflows/terraform-deploy.yml
+    with:
+      environment: production
+      action: ${{ github.event.inputs.action || 'apply' }}
+    secrets:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      GITOPS_SSH_PRIVATE_KEY: ${{ secrets.GITOPS_SSH_PRIVATE_KEY }}
+      AKS_ADMIN_GROUP_ID: ${{ secrets.AKS_ADMIN_GROUP_ID }}
+
+  # =============================================================================
+  # PRODUCTION PLAN (Pull Request Review)
+  # Shows what WOULD happen if PR is merged to main
+  # =============================================================================
+  production-plan:
+    name: 'Production Plan (PR Review)'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+
+    env:
+      TF_VERSION: '1.7.0'
+      ARM_USE_OIDC: true
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    defaults:
+      run:
+        working-directory: ./production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GITOPS_SSH_PRIVATE_KEY }}" > ~/.ssh/mercury-gitops-v2
+          chmod 600 ~/.ssh/mercury-gitops-v2
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone GitOps Repository
+        run: |
+          cd ${{ github.workspace }}
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/mercury-gitops-v2 -o StrictHostKeyChecking=no" \
+            git clone git@github.com:Tim275/mercury-gitops-v2.git
+
+      - name: Security Scan
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: ./production
+          soft_fail: true
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color \
+            -var="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            -var="aks_admin_group_id=${{ secrets.AKS_ADMIN_GROUP_ID }}" \
+            -var="gitops_repo_local_path=${{ github.workspace }}/mercury-gitops-v2" \
+            2>&1 | tee plan_output.txt
+        continue-on-error: true
+
+      - name: Comment Plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('production/plan_output.txt', 'utf8');
+            const truncated = plan.length > 60000 ? plan.substring(0, 60000) + '\n... (truncated)' : plan;
+
+            const output = `## 🚀 Production Terraform Plan
+
+            > **⚠️ Review carefully before merging to main!**
+
+            <details>
+            <summary>Show Plan</summary>
+
+            \`\`\`hcl
+            ${truncated}
+            \`\`\`
+
+            </details>
+
+            *Triggered by: @${{ github.actor }}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })

@@ -1,0 +1,29 @@
+# Documentation (lokal)
+CLAUDE.md
+PHASE-11-GUIDE.md
+PHASE-11-SUMMARY.md
+
+# Terraform
+tfplan
+*.tfplan
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+crash.log
+*.tfvars
+!example.tfvars
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Secrets (niemals committen!)
+*.pem
+*.key
+*secrets*.yaml
+*credentials*

@@ -10,7 +10,7 @@ tfplan
 *.tfstate.*
 *.tfstate.backup
 .terraform/
-.terraform.lock.hcl
+# .terraform.lock.hcl should be committed for consistent provider versions
 crash.log
 *.tfvars
 !example.tfvars

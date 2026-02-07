@@ -1,6 +1,6 @@
 # =============================================================================
-# Phase 11 Enterprise - Production Environment
-# Based on staging with production-ready settings
+# Enterprise Multi-Tenant Platform - Production Environment
+# Production-ready settings
 # =============================================================================
 
 terraform {

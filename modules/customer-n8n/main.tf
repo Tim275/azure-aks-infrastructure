@@ -9,7 +9,7 @@ resource "azurerm_storage_container" "customer" {
   container_access_type = "private"
 }
 
-# SAS token for backup access (2-year expiry) - like Mischa
+# SAS token for backup access (2-year expiry)
 data "azurerm_storage_account_blob_container_sas" "customer" {
   connection_string = var.storage_account_primary_connection_string
   container_name    = azurerm_storage_container.customer.name

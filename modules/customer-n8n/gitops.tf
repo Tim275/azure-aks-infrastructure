@@ -1,5 +1,5 @@
 # =============================================================================
-# GitOps Manifest Generation - Based on Mischa's Phase 10
+# GitOps Manifest Generation
 # Creates all Kubernetes manifests for a customer in the GitOps repository
 # =============================================================================
 

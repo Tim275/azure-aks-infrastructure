@@ -1,6 +1,6 @@
 # Enterprise Multi-Tenant AKS Platform
 
-Infrastructure-as-Code Plattform für Multi-Tenant Kubernetes auf Azure.
+Infrastructure-as-Code Plattform fuer Multi-Tenant Kubernetes auf Azure.
 Neuer Kunde = eine Zeile in `customers.tf` - der Rest passiert automatisch.
 
 ## Architektur
@@ -22,7 +22,7 @@ Neuer Kunde = eine Zeile in `customers.tf` - der Rest passiert automatisch.
 │  │  │  Checkov    │  │         │  │          │  │       │  │             │  │    │
 │  │  └────────────┘  └─────────┘  └──────────┘  └───────┘  └──────┬──────┘  │    │
 │  │                                                                │         │    │
-│  │  Auth: OIDC (keine Passwörter, nur Tokens)                     │         │    │
+│  │  Auth: OIDC (keine Passwoerter, nur Tokens)                    │         │    │
 │  └────────────────────────────────────────────────────────────────┼─────────┘    │
 │                                                                   │              │
 │       ┌───────────────────────────────────────────────────────────┘              │
@@ -117,106 +117,3 @@ Neuer Kunde = eine Zeile hinzufuegen, `git push`, fertig.
         ├── gitops.tf              # Generiert 11 YAML-Dateien
         └── outputs.tf
 ```
-
-## Staging vs Production
-
-| Aspekt | Staging | Production |
-|--------|---------|------------|
-| Branch | `staging` | `main` |
-| Backup Storage | LRS (lokal redundant) | GRS (geo-redundant) |
-| DB Replicas | 2 (1 Primary + 1 Replica) | 3+ (HA) |
-| n8n Replicas | 1 | 2+ |
-| Zweck | Testen, Validieren | Kundenbetrieb |
-
-## CI/CD Pipeline
-
-```
-Push to Branch
-     │
-     ├─ staging branch ──► Deploy Staging
-     │
-     ├─ main branch ──► Deploy Production
-     │
-     └─ PR main ──► Plan Only (Review)
-
-Pipeline Steps:
-  Security Scan (TFSec + Checkov)
-  → Init → Format Check → Validate
-  → Plan → Apply/Destroy
-  → GitOps Push → FluxCD Sync
-```
-
-**Auth:** OIDC (OpenID Connect) - keine Passwörter in GitHub, nur kurzlebige Tokens.
-
-**Concurrency:** Nur ein Deploy pro Environment gleichzeitig.
-
-## Technologien
-
-| Kategorie | Tool | Zweck |
-|-----------|------|-------|
-| IaC | Terraform | Infrastruktur provisionieren |
-| Cluster | Azure AKS | Managed Kubernetes |
-| GitOps | FluxCD | Git → Cluster Sync |
-| Database | CloudNative-PG | PostgreSQL HA im Cluster |
-| Secrets | Azure Key Vault + CSI Driver | Sichere Secret-Verwaltung |
-| Ingress | Traefik | Load Balancer + Routing |
-| TLS | Cert-Manager + Let's Encrypt | Automatische Zertifikate |
-| Monitoring | Prometheus + Grafana | Metriken + Dashboards |
-| Backups | Barman Cloud | CNPG → Azure Blob (PITR) |
-| Security | TFSec + Checkov | IaC Security Scanning |
-| Auth | Azure AD RBAC | kubectl Zugriffskontrolle |
-
-## Befehle
-
-```bash
-# Manueller Deploy/Destroy
-gh workflow run "Terraform" -f environment=staging -f action=apply
-gh workflow run "Terraform" -f environment=staging -f action=destroy
-gh workflow run "Terraform" -f environment=production -f action=apply
-gh workflow run "Terraform" -f environment=production -f action=destroy
-
-# Status
-gh run list --workflow="Terraform" --limit=5
-gh run watch
-
-# kubectl (erfordert Azure AD Login)
-az aks get-credentials --resource-group rg-mercury-staging --name mercury-staging
-kubectl get pods -A
-```
-
-## Was ich gelernt habe
-
-**Terraform & IaC**
-- Remote State mit Azure Blob Storage und State Locking fuer Team-Arbeit
-- Wiederverwendbare Module mit `for_each` fuer Multi-Tenant Skalierung
-- Variable Validation fuer Enterprise-Standard Input-Pruefung
-- `local_file` Resource um aus Terraform heraus GitOps-Manifeste zu generieren
-
-**Kubernetes & AKS**
-- Azure Managed Kubernetes mit Azure AD RBAC Integration
-- Namespace-Isolation fuer Multi-Tenancy (1 Cluster, viele Kunden)
-- CloudNative-PG fuer PostgreSQL High Availability direkt im Cluster
-- CSI Secret Store Driver fuer sichere Key Vault Integration
-
-**GitOps & FluxCD**
-- Git als Single Source of Truth fuer die gesamte Cluster-Konfiguration
-- Kustomize Base/Overlay Pattern fuer Environment-spezifische Patches
-- Race Condition Fix mit `time_sleep` nach Git Push (FluxCD Sync Timing)
-- Automatische Reconciliation alle 60 Sekunden
-
-**CI/CD & Security**
-- GitHub Actions mit OIDC Authentication (keine langlebigen Credentials)
-- Reusable Workflows (DRY - ein Workflow fuer beide Environments)
-- Security Scanning mit TFSec und Checkov in der Pipeline
-- Branch-basierte Deployment-Strategie (staging Branch → Staging, main → Production)
-
-**Backup & Disaster Recovery**
-- CNPG Barman Cloud Plugin fuer automatische Backups zu Azure Blob
-- WAL Archiving fuer Point-in-Time Recovery (PITR) auf jede Sekunde
-- LRS vs GRS Storage: geo-redundante Backups fuer Production
-- Scheduled Backups mit CronJob (taeglich 03:00 UTC)
-
-**Problemloesung**
-- Terraform State Lock Recovery bei abgebrochenen Workflows
-- vCPU Quota Management (Azure Free Tier Limits)
-- Azure Subscription Lifecycle (Free Trial → Pay-As-You-Go)

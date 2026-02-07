@@ -1,6 +1,6 @@
 # =============================================================================
-# Phase 11 Enterprise - Staging Environment
-# Based on Mischa's Phase 10 with improvements:
+# Enterprise Multi-Tenant Platform - Staging Environment
+# Features:
 # - Remote State in Azure Blob (not local)
 # - Environment variables via TF_VAR (not hardcoded)
 # =============================================================================
@@ -111,7 +111,7 @@ resource "azurerm_resource_group" "main" {
 }
 
 # =============================================================================
-# AKS Cluster - EXACTLY like Mischa with Best Practices
+# AKS Cluster
 # =============================================================================
 
 resource "azurerm_kubernetes_cluster" "main" {
@@ -131,7 +131,7 @@ resource "azurerm_kubernetes_cluster" "main" {
     name                         = "system"
     node_count                   = 1 # Reduced for vCPU quota (8 total in North Europe)
     vm_size                      = "Standard_D2s_v3"
-    only_critical_addons_enabled = true # <-- WICHTIG: Mischa-Style
+    only_critical_addons_enabled = true
 
     upgrade_settings {
       max_surge = "33%"
@@ -142,14 +142,14 @@ resource "azurerm_kubernetes_cluster" "main" {
     type = "SystemAssigned"
   }
 
-  # Azure AD RBAC - kubectl login via Azure AD (like Mischa)
+  # Azure AD RBAC - kubectl login via Azure AD
   # Only users in admin_group can use kubectl
   azure_active_directory_role_based_access_control {
     azure_rbac_enabled     = true
     admin_group_object_ids = [var.aks_admin_group_id]
   }
 
-  # Cilium CNI - like Mischa
+  # Cilium CNI
   network_profile {
     network_plugin     = "azure"
     network_policy     = "cilium"
@@ -165,7 +165,7 @@ resource "azurerm_kubernetes_cluster" "main" {
   oidc_issuer_enabled       = true
   workload_identity_enabled = true
 
-  # Maintenance windows - like Mischa
+  # Maintenance windows
   maintenance_window_auto_upgrade {
     frequency   = "Weekly"
     interval    = 1
@@ -185,7 +185,7 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 }
 
-# User Node Pool - for application workloads (like Mischa)
+# User Node Pool - for application workloads
 resource "azurerm_kubernetes_cluster_node_pool" "user" {
   name                  = "user"
   kubernetes_cluster_id = azurerm_kubernetes_cluster.main.id
@@ -237,7 +237,7 @@ resource "azurerm_role_assignment" "kv_aks_csi" {
 }
 
 # =============================================================================
-# FluxCD Extension - Wait for user pool like Mischa
+# FluxCD Extension
 # =============================================================================
 
 resource "azurerm_kubernetes_cluster_extension" "flux" {
@@ -273,7 +273,7 @@ resource "azurerm_kubernetes_flux_configuration" "main" {
     sync_interval_in_seconds = 60
   }
 
-  # Kustomizations - like Mischa's dependency chain
+  # Kustomizations
   kustomizations {
     name                       = "infra-controllers"
     path                       = "./infrastructure/controllers/${var.environment}"
@@ -330,7 +330,7 @@ resource "azurerm_kubernetes_flux_configuration" "main" {
 }
 
 # =============================================================================
-# Grafana Admin Credentials (like Mischa)
+# Grafana Admin Credentials
 # =============================================================================
 # Checkov CKV_AZURE_41: Secrets have expiration dates
 # Checkov CKV_AZURE_114: Secrets have content_type set

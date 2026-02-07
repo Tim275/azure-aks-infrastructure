@@ -1,8 +1,3 @@
-# Documentation (lokal)
-CLAUDE.md
-PHASE-11-GUIDE.md
-PHASE-11-SUMMARY.md
-
 # Terraform
 tfplan
 *.tfplan
@@ -10,7 +5,6 @@ tfplan
 *.tfstate.*
 *.tfstate.backup
 .terraform/
-# .terraform.lock.hcl should be committed for consistent provider versions
 crash.log
 *.tfvars
 !example.tfvars
@@ -27,3 +21,8 @@ crash.log
 *.key
 *secrets*.yaml
 *credentials*
+
+# Documentation (lokal)
+CLAUDE.md
+PHASE-11-GUIDE.md
+PHASE-11-SUMMARY.md

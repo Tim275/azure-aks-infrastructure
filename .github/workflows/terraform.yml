@@ -58,7 +58,6 @@ concurrency:
 jobs:
   # =============================================================================
   # STAGING DEPLOYMENT
-  # Triggered by: push to 'staging' branch OR manual workflow_dispatch
   # =============================================================================
   staging:
     name: 'Deploy Staging'
@@ -78,7 +77,6 @@ jobs:
 
   # =============================================================================
   # PRODUCTION DEPLOYMENT
-  # Triggered by: push to 'main' branch OR manual workflow_dispatch
   # =============================================================================
   production:
     name: 'Deploy Production'
@@ -98,7 +96,6 @@ jobs:
 
   # =============================================================================
   # PRODUCTION PLAN (Pull Request Review)
-  # Shows what WOULD happen if PR is merged to main
   # =============================================================================
   production-plan:
     name: 'Production Plan (PR Review)'
@@ -172,9 +169,9 @@ jobs:
             const plan = fs.readFileSync('production/plan_output.txt', 'utf8');
             const truncated = plan.length > 60000 ? plan.substring(0, 60000) + '\n... (truncated)' : plan;
 
-            const output = `## 🚀 Production Terraform Plan
+            const output = `## Production Terraform Plan
 
-            > **⚠️ Review carefully before merging to main!**
+            > **Review carefully before merging to main!**
 
             <details>
             <summary>Show Plan</summary>

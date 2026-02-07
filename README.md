@@ -3,67 +3,123 @@
 Infrastructure-as-Code Plattform fuer Multi-Tenant Kubernetes auf Azure.
 Neuer Kunde = eine Zeile in `customers.tf` - der Rest passiert automatisch.
 
-## Architektur
+## Staging Architektur
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                  │
-│  DEVELOPER                                                                       │
-│  ════════                                                                        │
-│  git push (staging branch)           git push (main branch)                      │
-│       │                                    │                                     │
-│       ▼                                    ▼                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────┐    │
-│  │                        GITHUB ACTIONS (CI/CD)                            │    │
-│  │                                                                          │    │
-│  │  ┌────────────┐  ┌─────────┐  ┌──────────┐  ┌───────┐  ┌─────────────┐  │    │
-│  │  │  Security   │  │  Init   │  │ Validate │  │ Plan  │  │   Apply /   │  │    │
-│  │  │  TFSec +    │→ │         │→ │  + Fmt   │→ │       │→ │   Destroy   │  │    │
-│  │  │  Checkov    │  │         │  │          │  │       │  │             │  │    │
-│  │  └────────────┘  └─────────┘  └──────────┘  └───────┘  └──────┬──────┘  │    │
-│  │                                                                │         │    │
-│  │  Auth: OIDC (keine Passwoerter, nur Tokens)                    │         │    │
-│  └────────────────────────────────────────────────────────────────┼─────────┘    │
-│                                                                   │              │
-│       ┌───────────────────────────────────────────────────────────┘              │
-│       │                                                                          │
-│       ▼                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────────────┐    │
-│  │                              AZURE                                       │    │
-│  │                                                                          │    │
-│  │   STAGING                                  PRODUCTION                    │    │
-│  │   ┌────────────────────────────┐           ┌────────────────────────┐    │    │
-│  │   │ AKS Cluster                │           │ AKS Cluster            │    │    │
-│  │   │ ├─ FluxCD (GitOps)         │           │ ├─ FluxCD (GitOps)     │    │    │
-│  │   │ ├─ CNPG PostgreSQL (HA)    │           │ ├─ CNPG PostgreSQL     │    │    │
-│  │   │ ├─ Traefik Ingress         │           │ ├─ Traefik Ingress     │    │    │
-│  │   │ ├─ Cert-Manager            │           │ ├─ Cert-Manager        │    │    │
-│  │   │ └─ Prometheus + Grafana    │           │ └─ Prometheus + Grafana│    │    │
-│  │   │                            │           │                        │    │    │
-│  │   │ Key Vault (Secrets)        │           │ Key Vault (Secrets)    │    │    │
-│  │   │ Storage: LRS (lokal)       │           │ Storage: GRS (geo)     │    │    │
-│  │   └────────────────────────────┘           └────────────────────────┘    │    │
-│  │                                                                          │    │
-│  │   Shared                                                                 │    │
-│  │   ┌─────────────────────────────────────────────────────────────────┐    │    │
-│  │   │ Remote State: Azure Blob Storage (State Locking)                │    │    │
-│  │   │ ├─ phase-11/staging.tfstate                                     │    │    │
-│  │   │ └─ phase-11/production.tfstate                                  │    │    │
-│  │   └─────────────────────────────────────────────────────────────────┘    │    │
-│  └──────────────────────────────────────────────────────────────────────────┘    │
-│                                                                                  │
-│       ┌──────────────────────────────────────────────────────┐                   │
-│       │                  GITOPS REPO                          │                   │
-│       │          (mercury-gitops-v2)                          │                   │
-│       │                                                      │                   │
-│       │  Terraform generiert YAML ──► Git Push               │                   │
-│       │                                   │                  │                   │
-│       │                          FluxCD synct (60s)          │                   │
-│       │                                   │                  │                   │
-│       │                          Cluster konfiguriert sich   │                   │
-│       └──────────────────────────────────────────────────────┘                   │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STAGING ENVIRONMENT                                                         │
+│                                                                             │
+│  GitHub Actions (Manual Trigger)                                            │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  gh workflow run "Terraform" -f environment=staging -f action=apply   │ │
+│  │                                                                        │ │
+│  │  Security Scan → Init → Validate → Plan → Apply → GitOps Push        │ │
+│  │  Auth: OIDC (keine Passwoerter)                                       │ │
+│  └──────────────────────────────────┬─────────────────────────────────────┘ │
+│                                     │                                       │
+│                                     ▼                                       │
+│  Azure (northeurope)                                                        │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │ Resource Group: rg-mercury-staging                                     │ │
+│  │                                                                        │ │
+│  │  AKS: mercury-staging                                                  │ │
+│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
+│  │  │ System Pool: 1x Standard_D2s_v3 (CriticalAddonsOnly)            │  │ │
+│  │  │ User Pool:   1x Standard_D2s_v3 (Workloads)                     │  │ │
+│  │  │                                                                  │  │ │
+│  │  │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────────┐   │  │ │
+│  │  │ │ FluxCD   │ │ Traefik  │ │ Cert-Mgr │ │ CNPG Operator     │   │  │ │
+│  │  │ │ (GitOps) │ │ (Ingress)│ │ (TLS)    │ │ (PostgreSQL HA)   │   │  │ │
+│  │  │ └──────────┘ └──────────┘ └──────────┘ └───────────────────┘   │  │ │
+│  │  │                                                                  │  │ │
+│  │  │ Pro Kunde:                                                       │  │ │
+│  │  │ ┌────────────────────────────────────────────────────────────┐   │  │ │
+│  │  │ │ Namespace: cicero                                          │   │  │ │
+│  │  │ │ ├─ n8n Deployment (1 Replica)                              │   │  │ │
+│  │  │ │ ├─ CNPG PostgreSQL (1 Instance)                            │   │  │ │
+│  │  │ │ ├─ SecretProviderClass → Key Vault CSI                     │   │  │ │
+│  │  │ │ └─ ScheduledBackup (taeglich 03:00 UTC)                    │   │  │ │
+│  │  │ └────────────────────────────────────────────────────────────┘   │  │ │
+│  │  │                                                                  │  │ │
+│  │  │ Monitoring: Prometheus + Grafana (KeyVault Credentials)         │  │ │
+│  │  └──────────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                        │ │
+│  │  Key Vault: kv-merc-staging-XXXX (RBAC, Secret Rotation)             │ │
+│  │  Storage:   mercurybackupsstaging (LRS - lokal redundant)            │ │
+│  │                                                                        │ │
+│  │  Network: Cilium CNI + Network Policies                               │ │
+│  │  Auth:    Azure AD RBAC (kubectl via Device Code Flow)                │ │
+│  │  Updates: Automatic Patch Upgrades (Sonntag 02:00 UTC)                │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  Remote State: Azure Blob → phase-11/staging.tfstate (State Locking)       │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Production Architektur
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PRODUCTION ENVIRONMENT                                                      │
+│                                                                             │
+│  GitHub Actions (Manual Trigger)                                            │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  gh workflow run "Terraform" -f environment=production -f action=apply│ │
+│  │                                                                        │ │
+│  │  Security Scan → Init → Validate → Plan → Apply → GitOps Push        │ │
+│  │  Auth: OIDC (keine Passwoerter)                                       │ │
+│  └──────────────────────────────────┬─────────────────────────────────────┘ │
+│                                     │                                       │
+│                                     ▼                                       │
+│  Azure (northeurope)                                                        │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │ Resource Group: rg-mercury-production                                  │ │
+│  │                                                                        │ │
+│  │  AKS: mercury-production                                               │ │
+│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
+│  │  │ System Pool: 1x Standard_D2s_v3 (CriticalAddonsOnly)            │  │ │
+│  │  │ User Pool:   1x Standard_D2s_v3 (Workloads)                     │  │ │
+│  │  │              ↑ Erhoehe auf 2+3 Nodes fuer HA bei Budget          │  │ │
+│  │  │                                                                  │  │ │
+│  │  │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────────┐   │  │ │
+│  │  │ │ FluxCD   │ │ Traefik  │ │ Cert-Mgr │ │ CNPG Operator     │   │  │ │
+│  │  │ │ (GitOps) │ │ (Ingress)│ │ (TLS)    │ │ (PostgreSQL HA)   │   │  │ │
+│  │  │ └──────────┘ └──────────┘ └──────────┘ └───────────────────┘   │  │ │
+│  │  │                                                                  │  │ │
+│  │  │ Pro Kunde:                                                       │  │ │
+│  │  │ ┌────────────────────────────────────────────────────────────┐   │  │ │
+│  │  │ │ Namespace: cicero                                          │   │  │ │
+│  │  │ │ ├─ n8n Deployment (2+ Replicas, Pod Anti-Affinity)         │   │  │ │
+│  │  │ │ ├─ CNPG PostgreSQL (3 Instances, HA)                       │   │  │ │
+│  │  │ │ ├─ SecretProviderClass → Key Vault CSI                     │   │  │ │
+│  │  │ │ └─ ScheduledBackup (taeglich 03:00 UTC)                    │   │  │ │
+│  │  │ └────────────────────────────────────────────────────────────┘   │  │ │
+│  │  │                                                                  │  │ │
+│  │  │ Monitoring: Prometheus + Grafana (KeyVault Credentials)         │  │ │
+│  │  └──────────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                        │ │
+│  │  Key Vault: kv-merc-production-XXXX (RBAC, Secret Rotation)           │ │
+│  │  Storage:   mercurybackupsprod (GRS - geo-redundant!)                 │ │
+│  │             ├─ Primary:   North Europe (Dublin)                        │ │
+│  │             └─ Secondary: West Europe (Amsterdam, ~800km)              │ │
+│  │                                                                        │ │
+│  │  Network: Cilium CNI + Network Policies                               │ │
+│  │  Auth:    Azure AD RBAC (kubectl via Device Code Flow)                │ │
+│  │  Updates: Automatic Patch Upgrades (Sonntag 02:00 UTC)                │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  Remote State: Azure Blob → phase-11/production.tfstate (State Locking)    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Staging vs Production Unterschiede
+
+| | Staging | Production |
+|---|---|---|
+| Storage Replikation | LRS (lokal) | **GRS (geo-redundant)** |
+| DB Instances | 1 | **3 (HA)** |
+| n8n Replicas | 1 | **2+ (Anti-Affinity)** |
+| Backup Geo-Redundanz | Nein | **Ja (Dublin + Amsterdam)** |
 
 ## Customer Onboarding Flow
 
@@ -88,14 +144,12 @@ customers.tf                    Terraform Module              GitOps Repo       
              └─ Blob Container (Backups)
 ```
 
-Neuer Kunde = eine Zeile hinzufuegen, `git push`, fertig.
-
 ## Struktur
 
 ```
 .
 ├── .github/workflows/
-│   ├── terraform.yml              # Branch-Routing (staging/main)
+│   ├── terraform.yml              # Manual Trigger (workflow_dispatch)
 │   └── terraform-deploy.yml       # Reusable Workflow (DRY)
 ├── staging/
 │   ├── main.tf                    # AKS, Key Vault, FluxCD

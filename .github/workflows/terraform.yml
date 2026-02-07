@@ -17,6 +17,7 @@ on:
       - 'staging/**'
       - 'production/**'
       - 'modules/**'
+      - '!**/.terraform.lock.hcl'
   pull_request:
     branches:
       - main
@@ -24,6 +25,7 @@ on:
       - 'staging/**'
       - 'production/**'
       - 'modules/**'
+      - '!**/.terraform.lock.hcl'
   workflow_dispatch:
     inputs:
       environment:

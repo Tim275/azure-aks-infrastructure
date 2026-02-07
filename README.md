@@ -144,30 +144,3 @@ customers.tf                    Terraform Module              GitOps Repo       
              └─ Blob Container (Backups)
 ```
 
-## Struktur
-
-```
-.
-├── .github/workflows/
-│   ├── terraform.yml              # Manual Trigger (workflow_dispatch)
-│   └── terraform-deploy.yml       # Reusable Workflow (DRY)
-├── staging/
-│   ├── main.tf                    # AKS, Key Vault, FluxCD
-│   ├── customers.tf               # Kundenliste + GitOps Push
-│   ├── backups.tf                 # Storage Account (LRS)
-│   ├── dns.tf                     # DNS Zone (vorbereitet)
-│   └── outputs.tf
-├── production/
-│   ├── main.tf                    # Identisch, Production Settings
-│   ├── customers.tf               # Production Kunden
-│   ├── backups.tf                 # Storage Account (GRS!)
-│   ├── dns.tf                     # DNS Zone (vorbereitet)
-│   └── outputs.tf
-└── modules/
-    └── customer-n8n/
-        ├── variables.tf           # Input mit Validation
-        ├── main.tf                # Azure Resources (Blob, SAS)
-        ├── secrets.tf             # Key Vault Secrets
-        ├── gitops.tf              # Generiert 11 YAML-Dateien
-        └── outputs.tf
-```

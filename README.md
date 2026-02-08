@@ -1,7 +1,6 @@
 # Enterprise Multi-Tenant AKS Platform
 
-Infrastructure-as-Code Plattform fuer Multi-Tenant Kubernetes auf Azure.
-Neuer Kunde = eine Zeile in `customers.tf` - der Rest passiert automatisch.
+Production-ready IaC platform for multi-tenant AKS on Azure. Automated customer provisioning, GitOps with FluxCD, and OIDC-based CI/CD via GitHub Actions.
 
 ## Architecture
 

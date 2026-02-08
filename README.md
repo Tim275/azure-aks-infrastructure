@@ -11,15 +11,6 @@ Neuer Kunde = eine Zeile in `customers.tf` - der Rest passiert automatisch.
   </a>
 </p>
 
-### Staging vs Production
-
-| | Staging | Production |
-|---|---|---|
-| Storage Replication | LRS (local) | **GRS (geo-redundant)** |
-| DB Instances | 1 | **3 (HA)** |
-| n8n Replicas | 1 | **2+ (Anti-Affinity)** |
-| Backup Geo-Redundancy | No | **Yes (Dublin + Amsterdam)** |
-
 ## Customer Onboarding Flow
 
 ```

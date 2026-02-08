@@ -5,7 +5,11 @@ Neuer Kunde = eine Zeile in `customers.tf` - der Rest passiert automatisch.
 
 ## Architecture
 
-![Architecture](docs/architecture.svg)
+<p align="center">
+  <a href="docs/architecture.svg">
+    <img src="docs/architecture.svg" alt="Architecture" width="100%">
+  </a>
+</p>
 
 ### Staging vs Production
 

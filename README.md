@@ -1,21 +1,20 @@
 # Enterprise Multi-Tenant AKS Platform
 
 Infrastructure-as-Code Plattform fuer Multi-Tenant Kubernetes auf Azure.
+Neuer Kunde = eine Zeile in `customers.tf` - der Rest passiert automatisch.
 
+## Architecture
 
+![Architecture](docs/architecture.svg)
 
-
-
-```
-
-### Staging vs Production Unterschiede
+### Staging vs Production
 
 | | Staging | Production |
 |---|---|---|
-| Storage Replikation | LRS (lokal) | **GRS (geo-redundant)** |
+| Storage Replication | LRS (local) | **GRS (geo-redundant)** |
 | DB Instances | 1 | **3 (HA)** |
 | n8n Replicas | 1 | **2+ (Anti-Affinity)** |
-| Backup Geo-Redundanz | Nein | **Ja (Dublin + Amsterdam)** |
+| Backup Geo-Redundancy | No | **Yes (Dublin + Amsterdam)** |
 
 ## Customer Onboarding Flow
 
@@ -39,4 +38,3 @@ customers.tf                    Terraform Module              GitOps Repo       
              ├─ Key Vault Secrets (DB Credentials, SAS Token)
              └─ Blob Container (Backups)
 ```
-

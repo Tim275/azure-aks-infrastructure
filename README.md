@@ -2,6 +2,9 @@
 
 Production-ready IaC platform for multi-tenant AKS on Azure. Automated customer provisioning, GitOps with FluxCD, and OIDC-based CI/CD via GitHub Actions.
 
+The Gitops Repo to this Projekt: https://github.com/Tim275/mercury-gitops-v2
+
+
 ## Architecture
 
 <p align="center">
